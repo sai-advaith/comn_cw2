@@ -43,6 +43,7 @@ for i in range(len(file_chunks) - 1):
     header_i = seq_number + eof
     chunk_i = header_i + file_chunks[i]
     client_socket.sendto(chunk_i, (RECEIVER_IP_ADDRESS, RECEIVER_PORT_NUMBER))
+    time.sleep(0.005)
 
 # Last packet
 i += 1
@@ -56,8 +57,6 @@ last_chunk_i = last_header_i + file_chunks[i]
 # Send last packet
 client_socket.sendto(last_chunk_i, (RECEIVER_IP_ADDRESS, RECEIVER_PORT_NUMBER))
 
-# TODO: Change 2048
-modified_file, server_address = client_socket.recvfrom(2048)
+# Close
 client_socket.close()
 
-# # For Part 1, you can use the sleep() between packets so that you don't saturate the interface. Note that you can use the sleep ONLY in part 1

@@ -16,24 +16,47 @@ receiver_socket.bind(('', RECEIVER_PORT_NUMBER))
 
 file_chunks = []
 
+# Parameters for file
 CHUNK_SIZE = 1027
 file_received = False
+
+# Next sequence number
+expected_next_seq = 0
+
 while True:
     # chunks we should have
     chunk, sender_address = receiver_socket.recvfrom(CHUNK_SIZE)
+
     # Bytes 1,2 -> seq_no and byte 3 -> eof
     sequence_number, eof = chunk[:2], chunk[2]
     sequence_number = int.from_bytes(sequence_number, 'little')
-    ACK = int.to_bytes(sequence_number, 2, 'little')
-    receiver_socket.sendto(ACK, sender_address)
-    data = chunk[3:]
-    file_chunks.append(data)
 
-    # End of File
-    if eof == 1:
-        break
+    # Not duplicate
+    if sequence_number == expected_next_seq:
+        # Save chunk
+        data = chunk[3:]
+        file_chunks.append(data)
+
+        # End of File
+        if eof == 1:
+            # Send 10 ACKS
+            for i in range(10):
+                ACK = int.to_bytes(expected_next_seq, 2, 'little')
+                receiver_socket.sendto(ACK, sender_address)
+            break
+
+        ACK = int.to_bytes(expected_next_seq, 2, 'little')
+        expected_next_seq += 1
+    else:
+        # Cumulative ACK
+        if expected_next_seq > 0:
+            ACK = int.to_bytes(expected_next_seq - 1, 2, 'little')
+
+    # Send ACK
+    receiver_socket.sendto(ACK, sender_address)
 
 receiver_socket.close()
+
 # Write file back
 write_file = open('receiver_test.jpg', 'wb')
 for chunk in file_chunks:
