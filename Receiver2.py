@@ -52,7 +52,7 @@ while True:
 receiver_socket.close()
 
 # Write file back
-write_file = open('receiver_test.jpg', 'wb')
+write_file = open(FILE_NAME, 'wb')
 for chunk in file_chunks:
     write_file.write(chunk)
 write_file.close()

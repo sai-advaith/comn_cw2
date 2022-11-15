@@ -1,5 +1,5 @@
 import sys
-import socket
+from socket import *
 import math
 import time
 from threading import Thread, Lock, Timer
@@ -10,8 +10,6 @@ base = 0
 next_sequence_number = 0
 
 # Dictionary
-ack_dict = {}
-send_dict = {}
 timer_object = None
 
 class Sender(Thread):
@@ -34,22 +32,20 @@ class Sender(Thread):
         """
         # Header
         seq_number = int.to_bytes(next_seq, 2, 'little')
-        if i != len(self.chunks) - 1:
+        if next_seq != len(self.chunks) - 1:
             eof = int.to_bytes(0, 1, 'little')
         else:
             eof = int.to_bytes(1, 1, 'little')
 
         # Prepare data
         header_i = seq_number + eof
-        chunk_i = header_i + self.chunks[i]
+        chunk_i = header_i + self.chunks[next_seq]
         return chunk_i
 
     def run(self):
         # Set global
         global base
         global next_sequence_number
-        global ack_dict
-        global send_dict
         global timer_object
 
         # Send
@@ -62,23 +58,23 @@ class Sender(Thread):
                 i = next_sequence_number
                 chunk_i = self.format_packet(i)
                 self.socket.sendto(chunk_i, (self.receiver_ip, self.receiver_port))
+                print(f"packet {i} sent")
                 if base == next_sequence_number:
-                    timer_object = Timer(self.timeout, "timer")
+                    timer_object = TimerThread(self.timeout, "timer")
                     # Start timer
-                    timer_thread.start()
+                    timer_object.start()
 
                 # Lock
                 lock_sender = Lock()
                 lock_sender.acquire()
 
                 # Lock when updating this
-                send_dict[next_sequence_number] = True
                 next_sequence_number += 1
-
+                print(f"base = {base}, next sequence number = {next_sequence_number}")
                 # Lock release
                 lock_sender.release()
         
-class Timer(Thread):
+class TimerThread(Thread):
     """
     Thread for maintaining a Timeout
     """
@@ -86,7 +82,7 @@ class Timer(Thread):
         Thread.__init__(self)
         self.timeout = timeout
         self.name = name
-        self.time = Timer(self.timeout, update)
+        self.clock = Timer(self.timeout, self.update)
     def update(self):
         """
         After transmit, move next_sequence_number pointer
@@ -97,8 +93,9 @@ class Timer(Thread):
         # Lock
         lock_timer = Lock()
         lock_timer.acquire()
-
+        print("TIMEOUT")
         next_sequence_number = base
+        print(f"base = {base}, next sequence number = {next_sequence_number}\n")
         lock_timer.release()
 
     def run(self):
@@ -106,13 +103,15 @@ class Timer(Thread):
         Start the timer
         """
         # Start timeout
-        self.time.start()
+        print("TIMER STARTED")
+        self.clock.start()
 
     def stop(self):
         """
         Kill it
         """
-        self.time.cancel()
+        print("TIMER STOPPED")
+        self.clock.cancel()
 
 class Receiver(Thread):
     """
@@ -125,7 +124,7 @@ class Receiver(Thread):
         self.name = name
         self.window_size = window_size
         self.socket = socket
-        self.receiver_address = receiver_address
+        self.receiver_ip = receiver_ip
         self.receiver_port = receiver_port
 
     def run(self):
@@ -135,8 +134,6 @@ class Receiver(Thread):
         # Make global
         global next_sequence_number
         global base
-        global ack_dict
-        global send_dict
         global timer_object
 
         # Every ACK received
@@ -146,20 +143,21 @@ class Receiver(Thread):
             ack_seq = int.from_bytes(ack_seq, 'little')
 
             # If correct ack received
-            if ack_seq in range(base, base + N):
+            if ack_seq in range(base, base + self.window_size):
                 lock_receiver = Lock()
                 lock_receiver.acquire()
 
-                # Packets received due to cum ack
-                ack_dict[base] = True
                 # Shift window
+                print(f"ACK {ack_seq} received")
                 base = ack_seq + 1
-
+                print(f"base = {base}, next sequence number = {next_sequence_number}\n")
                 lock_receiver.release()
                 if base == next_sequence_number:
                     timer_object.stop()
                 else:
                     # Start timer
+                    timer_object.stop()
+                    timer_object = TimerThread(self.timeout, "timer")
                     timer_object.start()
             else:
                 pass
@@ -174,7 +172,7 @@ RECEIVER_IP_ADDRESS = sys.argv[1]
 RECEIVER_PORT_NUMBER = int(sys.argv[2])
 FILE_NAME = sys.argv[3]
 TIMELIMIT = float(sys.argv[4]) / 1000
-WINDOW_SIZE = sys.argv[5]
+WINDOW_SIZE = int(sys.argv[5])
 
 # Prepare file chunks
 CHUNK_SIZE = 1024
@@ -195,7 +193,6 @@ chunks = file_chunks[:-1]
 
 # Initialize socket
 client_socket = socket(AF_INET, SOCK_DGRAM)
-client_socket.setblocking(0)
 
 # Important threads
 sender_thread = Sender(TIMELIMIT, chunks, "packet_sender", WINDOW_SIZE, client_socket, RECEIVER_IP_ADDRESS, RECEIVER_PORT_NUMBER)

@@ -46,6 +46,7 @@ while True:
             break
 
         ACK = int.to_bytes(expected_next_seq, 2, 'little')
+        print(f"ACK sent for {sequence_number}")
         expected_next_seq += 1
     else:
         # Cumulative ACK
@@ -54,11 +55,11 @@ while True:
 
     # Send ACK
     receiver_socket.sendto(ACK, sender_address)
-
+print(f"ACK sent for {sequence_number}")
 receiver_socket.close()
 
 # Write file back
-write_file = open('receiver_test.jpg', 'wb')
+write_file = open(FILE_NAME, 'wb')
 for chunk in file_chunks:
     write_file.write(chunk)
 write_file.close()
