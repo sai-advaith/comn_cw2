@@ -46,16 +46,14 @@ while True:
             break
 
         ACK = int.to_bytes(expected_next_seq, 2, 'little')
-        print(f"ACK sent for {sequence_number}")
+        receiver_socket.sendto(ACK, sender_address)
         expected_next_seq += 1
     else:
         # Cumulative ACK
         if expected_next_seq > 0:
             ACK = int.to_bytes(expected_next_seq - 1, 2, 'little')
+            receiver_socket.sendto(ACK, sender_address)
 
-    # Send ACK
-    receiver_socket.sendto(ACK, sender_address)
-print(f"ACK sent for {sequence_number}")
 receiver_socket.close()
 
 # Write file back
