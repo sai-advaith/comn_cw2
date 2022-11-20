@@ -42,18 +42,22 @@ while True:
         # End of File
         if eof == 1:
             # Send 10 ACKS
+            from time import sleep
             for i in range(10):
                 ACK = int.to_bytes(expected_next_seq, 2, 'little')
                 receiver_socket.sendto(ACK, sender_address)
+                # sleep(0.05)
             break
 
         ACK = int.to_bytes(expected_next_seq, 2, 'little')
+        print(f"ACK {expected_next_seq} sent")
         receiver_socket.sendto(ACK, sender_address)
         expected_next_seq += 1
     else:
         # Cumulative ACK
         if expected_next_seq > 0:
             ACK = int.to_bytes(expected_next_seq - 1, 2, 'little')
+            print(f"ACK {expected_next_seq} sent")
             receiver_socket.sendto(ACK, sender_address)
 
 receiver_socket.close()

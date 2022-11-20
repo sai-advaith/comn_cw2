@@ -1,5 +1,5 @@
 # Sai Advaith Maddipatla 1904223
-
+# TODO: Handle the case where we close socket but still try to send
 # Python imports
 import sys
 import time
@@ -40,20 +40,22 @@ client_socket = socket(AF_INET, SOCK_DGRAM)
 # Send all chunks over except last one
 file_transfer_start = time.time()
 retransmission = 0
+
 for i in range(len(file_chunks) - 1):
-    while True:
-        try:
-            # Sequence number is 2 bytes
-            seq_number = int.to_bytes(i, 2, 'little')
-            # EOF is one byte
-            eof = int.to_bytes(0, 1, 'little')
+    ack_received = False
+    # Sequence number is 2 bytes
+    seq_number = int.to_bytes(i, 2, 'little')
+    # EOF is one byte
+    eof = int.to_bytes(0, 1, 'little')
 
-            # Prepare data
-            header_i = seq_number + eof
-            chunk_i = header_i + file_chunks[i]
+    # Prepare data
+    header_i = seq_number + eof
+    chunk_i = header_i + file_chunks[i]
 
-            client_socket.sendto(chunk_i, (RECEIVER_IP_ADDRESS, RECEIVER_PORT_NUMBER))
+    client_socket.sendto(chunk_i, (RECEIVER_IP_ADDRESS, RECEIVER_PORT_NUMBER))
 
+    while not ack_received:
+        try:    
             # Set timer
             client_socket.settimeout(TIMELIMIT)
 
@@ -63,9 +65,10 @@ for i in range(len(file_chunks) - 1):
 
             # Ack received!
             if ack_seq == i:
-                break
+                ack_received = True
         # Timeout
         except timeout:
+            client_socket.sendto(chunk_i, (RECEIVER_IP_ADDRESS, RECEIVER_PORT_NUMBER))
             retransmission += 1
 
 # Last packet

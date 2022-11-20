@@ -9,6 +9,7 @@ from threading import Thread, Lock, Timer
 base = 0
 next_sequence_number = 0
 
+sent_hash = {}
 class Sender(Thread):
     """
     Thread for Sending packets
@@ -44,14 +45,19 @@ class Sender(Thread):
 
     def run(self):
         # Send
+        global sent_hash
         if self.start_idx < len(self.chunks) or self.end_idx < len(self.chunks):
             for i in range(self.start_idx, self.end_idx):
                 chunk_i = self.format_packet(i)
-                if chunk_i is not None:
-                    try:
+                try:
+                    if self.retransmit:
                         self.socket.sendto(chunk_i, (self.receiver_ip, self.receiver_port))
-                    except:
-                        return
+                    else:
+                        if i not in sent_hash.keys():
+                            self.socket.sendto(chunk_i, (self.receiver_ip, self.receiver_port))
+                            sent_hash[i] = True
+                except:
+                    return
         else:
             pass
 
@@ -73,19 +79,22 @@ class Receiver(Thread):
         """
         Another thread to retransmit the packet
         """
+        # print("TIMEOUT")
         global base
         global next_sequence_number
-        if (base == next_sequence_number) and base == len(self.chunks):
+        if base == len(self.chunks):
             return
-        # Just in case
-        self.timer_object.cancel()
-        # Start before retransmit
-        self.timer_object = Timer(self.timelimit, lambda: self.retransmit())
-        self.timer_object.start()
 
         # Retransmit
         retransmit_sender = Sender(self.chunks, self.socket, base, next_sequence_number, self.receiver_ip, self.receiver_port, True)
         retransmit_sender.start()
+
+        # Just in case
+        self.timer_object.cancel()
+        # Start before retransmit
+        self.timer_object = Timer(self.timelimit, self.retransmit)
+        self.timer_object.start()
+        # print("starting for retransmit")
 
     def clip(self, base, value):
         if base + value > len(self.chunks):
@@ -115,6 +124,7 @@ class Receiver(Thread):
                     # Start timer
                     self.timer_object = Timer(self.timelimit, self.retransmit)
                     self.timer_object.start()
+                    # print("new window timeout")
                 # Lock
                 lock_nsn = Lock()
                 lock_nsn.acquire()
@@ -132,7 +142,8 @@ class Receiver(Thread):
             # If correct ack received
             window_max = self.clip(base, self.window_size)
 
-            if ack_seq in range(base, window_max):
+            if base <= ack_seq < window_max:
+                print(f"ACK RECEIVED = {ack_seq}")
                 lock_receiver = Lock()
                 lock_receiver.acquire()
                 prev_base = base
@@ -142,25 +153,23 @@ class Receiver(Thread):
                 offset = base - prev_base
                 lock_receiver.release()
 
-                if base == next_sequence_number:
-                    # Stop timer
-                    self.timer_object.cancel()
-                else:
-                    # Start timer
-                    self.timer_object.cancel()
-                    self.timer_object = Timer(self.timelimit, self.retransmit)
-                    self.timer_object.start()
-
                 # Send new after receiving ack
                 new_send_idx = self.clip(next_sequence_number, offset)
                 new_sender_thread = Sender(self.chunks, self.socket, next_sequence_number, new_send_idx, self.receiver_ip, self.receiver_port)
                 new_sender_thread.start()
+
+                # Start timer
+                self.timer_object.cancel()
+                self.timer_object = Timer(self.timelimit, self.retransmit)
+                self.timer_object.start()
+                # print("Starting after ack")
 
                 # Lock and update
                 lock_nsn = Lock()
                 lock_nsn.acquire()
                 next_sequence_number = new_send_idx
                 lock_nsn.release()
+                # print(f"next sequence numnber = {next_sequence_number} and base = {base}")
 
             else:
                 pass
