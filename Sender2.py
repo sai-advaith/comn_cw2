@@ -74,17 +74,17 @@ for i in range(len(file_chunks) - 1):
 # Last packet
 i += 1
 
+# Format last packet
+last_seq_number = int.to_bytes(i, 2, 'little')
+eof = int.to_bytes(1, 1, 'little')
+last_header_i = last_seq_number + eof
+last_chunk_i = last_header_i + file_chunks[i]
+
+client_socket.sendto(last_chunk_i, (RECEIVER_IP_ADDRESS, RECEIVER_PORT_NUMBER))
 # Send last packet
-while True:
+ack_received = False
+while not ack_received:
     try:
-        # Format last packet
-        last_seq_number = int.to_bytes(i, 2, 'little')
-        eof = int.to_bytes(1, 1, 'little')
-        last_header_i = last_seq_number + eof
-        last_chunk_i = last_header_i + file_chunks[i]
-
-        client_socket.sendto(last_chunk_i, (RECEIVER_IP_ADDRESS, RECEIVER_PORT_NUMBER))
-
         # Set timer
         client_socket.settimeout(TIMELIMIT)
 
@@ -93,10 +93,12 @@ while True:
         ack_seq = int.from_bytes(ack_seq, 'little')
         # Ack received!
         if ack_seq == i:
+            ack_received = True
             file_transfer_end = time.time()
             break
     # Timeout
-    except:
+    except timeout:
+        client_socket.sendto(last_chunk_i, (RECEIVER_IP_ADDRESS, RECEIVER_PORT_NUMBER))
         retransmission += 1
 
 # Throughput in KBytes/sec
