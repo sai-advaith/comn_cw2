@@ -3,6 +3,7 @@ import sys
 from socket import *
 import math
 import time
+import threading
 from threading import Thread, Lock, Timer
 
 # Define pointers
@@ -32,7 +33,6 @@ class Sender(Thread):
         """
         Retransmit sequence number packet
         """
-        print("Timeout")
         global sequence_number_thread
         retransmit_lock = Lock()
         retransmit_lock.acquire()
@@ -42,14 +42,12 @@ class Sender(Thread):
         sequence_number_thread[self.sequence_number] = resender_thread
         # re-Send the packet
         resender_thread.start()
-        print(f"resending {self.sequence_number}")
 
         retransmit_lock.release()
         
     def run(self):
         # Send the packets
         try:
-            print(f"Sending sequence number {self.sequence_number}")
             self.socket.sendto(self.chunk, (self.receiver_ip, self.receiver_port))
             # Send packet and start timer
             send_timer_lock = Lock()
@@ -68,7 +66,6 @@ class Sender(Thread):
         """
         Wrapper to stop the timer
         """
-        print(f"killing thread # {self.sequence_number}")
         # Cancel timer called when we get ack
         self.timer.cancel()
 
@@ -122,11 +119,13 @@ class Receiver(Thread):
         """
         global ack_hash
         global send_hash
-        for j in range(base + 1, min(len(self.chunks), base + self.window_size)):
-            # Find the first sent packet which has not been ACK'd
-            if not ack_hash[j] and send_hash[j]:
+        new_base = base + 1
+        while new_base in ack_hash:
+            if not ack_hash[new_base]:
                 break
-        return j
+            new_base += 1
+        return new_base
+
     def send_on_receipt(self, offset, prev_base):
         global ack_hash
         global send_hash
@@ -148,9 +147,9 @@ class Receiver(Thread):
 
                 # Keep track of that thread
                 sequence_number_thread[idx] = packet_sender
-                j += 1
             else:
                 pass
+            j += 1
     def run(self):
         """
         Run for the receiving thread
@@ -161,36 +160,35 @@ class Receiver(Thread):
         global send_hash
         global ack_hash
 
+        # Send
+        # TODO: Do this in sep thread?
+        for i in range(base, min(len(self.chunks), base + self.window_size)):    
+            # Send packet
+            if not i in send_hash.keys():
+                chunk_i = self.format_packet(i, self.chunks[i], i == len(self.chunks) - 1)
+                packet_sender = Sender(chunk_i, self.timelimit, self.socket, self.receiver_ip, self.receiver_port, i)
+                packet_sender.start()
+
+                # Lock before manipulating sent variable
+                pkt_send_lock = Lock()
+                pkt_send_lock.acquire()
+
+                # Packet sent but not yet acked
+                send_hash[i] = True
+                ack_hash[i] = False
+
+                # Keep track of that thread
+                sequence_number_thread[i] = packet_sender
+
+                # Done - release lock
+                pkt_send_lock.release()
+            else:
+                pass
+
         # Every ACK received
         while base < len(self.chunks):
-            # Send
-            # TODO: Do this in sep thread?
-            for i in range(base, min(len(self.chunks), base + self.window_size)):    
-                # Send packet
-                if not i in send_hash.keys():
-                    chunk_i = self.format_packet(i, self.chunks[i], i == len(self.chunks) - 1)
-                    packet_sender = Sender(chunk_i, self.timelimit, self.socket, self.receiver_ip, self.receiver_port, i)
-                    packet_sender.start()
-
-                    # Lock before manipulating sent variable
-                    pkt_send_lock = Lock()
-                    pkt_send_lock.acquire()
-
-                    # Packet sent but not yet acked
-                    send_hash[i] = True
-                    ack_hash[i] = False
-
-                    # Keep track of that thread
-                    sequence_number_thread[i] = packet_sender
-
-                    # Done - release lock
-                    pkt_send_lock.release()
-                else:
-                    pass
-
             # Just receive
             ack_seq, receiver_address = client_socket.recvfrom(2)
-            print(f"ack received = {ack_seq}")
             ack_seq = int.from_bytes(ack_seq, 'little')
             if ack_seq == self.final_idx:
                 self.clear_threads()
@@ -207,17 +205,18 @@ class Receiver(Thread):
                     # Shift window
                     ack_hash[ack_seq] = True
                     sequence_number_thread[ack_seq].stop_timer()
+                    base = self.get_next_base(base)
+
+                    # Done with the lock
+                    offset = base - prev_base
+                    self.send_on_receipt(offset, prev_base)
+                    # resend right after ack
+
                 else:
                     # Mark received and stop the timer
                     ack_hash[ack_seq] = True
                     sequence_number_thread[ack_seq].stop_timer()
 
-                print(f"update base = {base}")
-                # Done with the lock
-                offset = base - prev_base
-                self.send_on_receipt(offset, prev_base)
-                base = self.get_next_base(base)
-                # resend right after ack
                 lock_update.release()
             else:
                 pass

@@ -7,11 +7,10 @@ def update_receive_base(receive_base, received_packet, window_size):
     """
     Move the receive base to the next pointer
     """
-    for i in range(receive_base + 1, receive_base + window_size):
-        # This means we have not received this yet
-        if i not in received_packet.keys():
-            break
-    return i
+    new_base = receive_base + 1
+    while new_base in received_packet:
+        new_base += 1
+    return new_base
 
 def received_prev_packets(received_packet, final_idx):
     """
@@ -80,15 +79,13 @@ while True:
 
         # Buffer and send ACK
         ACK = int.to_bytes(sequence_number, 2, 'little')
-        print(f"ACK sent {sequence_number}, receiver base = {receive_base}")
-        receiver_socket.sendto(ACK, sender_address)
         if sequence_number == receive_base:
             receive_base = update_receive_base(receive_base, pkt_received, WINDOW_SIZE)
+        receiver_socket.sendto(ACK, sender_address)
 
     elif sequence_number in range(max(0, receive_base - WINDOW_SIZE), receive_base):
         # Just send an ACK
         ACK = int.to_bytes(sequence_number, 2, 'little')
-        print(f"ACK sent {sequence_number}, receiver base = {receive_base}")
         receiver_socket.sendto(ACK, sender_address)
     else:
         pass
