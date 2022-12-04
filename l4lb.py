@@ -27,8 +27,8 @@ class L4Lb(app_manager.RyuApp):
         #
         # write your code here, if needed
         self.counter = 0
-        self.cmac = None
-        self.cip = None
+        self.cmac = '00:00:00:00:00:01'
+        self.cip = '10.0.0.1'
         #
 
     def _send_packet(self, datapath, port, pkt):
